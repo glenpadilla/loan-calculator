@@ -120,6 +120,87 @@
         </table>
       </div>
     </section>
+<!-- Rental Property Cash Flow Calculator -->
+<section class="card p-4 sm:p-6 mt-8" id="rental-calc-card">
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold text-slate-900">Rental Property Cash Flow</h2>
+    <div class="text-xs text-slate-500">Monthly cash + yearly projection</div>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Inputs -->
+    <div class="space-y-4">
+      <div class="grid-col">
+        <label class="label">Monthly Rent (starting)</label>
+        <input id="rentMonth" type="number" min="0" step="0.01" class="input" placeholder="e.g. 2500" />
+
+        <label class="label">Maintenance (% of rent)</label>
+        <input id="maintPct" type="number" min="0" step="0.01" class="input" placeholder="e.g. 8" />
+      </div>
+      <div class="grid-col">
+        <label class="label">Taxes (% of rent)</label>
+        <input id="taxPct" type="number" min="0" step="0.01" class="input" placeholder="e.g. 12" />
+
+        <label class="label">Rent Increase (% per year)</label>
+        <input id="incPct" type="number" min="0" step="0.01" class="input" value="0" />
+      </div>
+      <div class="grid-col">
+        <label class="label">Years to Project</label>
+        <input id="yearsProj" type="number" min="1" step="1" class="input" value="5" />
+
+        <div></div>
+      </div>
+
+      <div class="flex flex-wrap gap-3 pt-2">
+        <button id="rentalCalcBtn" class="btn btn-primary">Calculate Rental</button>
+        <button id="rentalResetBtn" class="btn">Reset</button>
+        <button id="rentalCsvBtn" class="btn" disabled>Download CSV</button>
+      </div>
+      <p class="text-xs text-slate-500">
+        Notes: Maintenance and Taxes are treated as a % of rent (simple model). Rent increases annually by the given %.
+      </p>
+    </div>
+
+    <!-- Monthly Summary -->
+    <div class="space-y-3">
+      <div class="pill">Monthly Summary</div>
+      <div class="card p-4 space-y-3">
+        <div class="flex justify-between text-slate-700"><span>Monthly Gross</span><span id="rMonGross" class="font-semibold">—</span></div>
+        <div class="flex justify-between text-slate-700"><span>Monthly Expenses</span><span id="rMonExp" class="font-semibold">—</span></div>
+        <div class="flex justify-between text-slate-700"><span>Monthly Net</span><span id="rMonNet" class="font-semibold">—</span></div>
+      </div>
+      <div class="text-xs text-slate-500">Expenses = (Maintenance% + Taxes%) × rent.</div>
+    </div>
+
+    <!-- Placeholder / simple explainer -->
+    <div class="space-y-3">
+      <div class="pill">How it works</div>
+      <div class="card p-4 text-sm text-slate-700 space-y-2">
+        <p>Yearly projection compounds the rent by the annual increase you enter.</p>
+        <p>For each year: Gross = 12×rent, Expenses = Gross×(maint%+tax%), Net = Gross − Expenses.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yearly Table -->
+  <div class="table-wrap mt-6">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="text-left text-slate-600">
+          <th class="sticky-th p-2">Year</th>
+          <th class="sticky-th p-2">Monthly Rent</th>
+          <th class="sticky-th p-2">Annual Gross</th>
+          <th class="sticky-th p-2">Annual Maintenance</th>
+          <th class="sticky-th p-2">Annual Taxes</th>
+          <th class="sticky-th p-2">Annual Net</th>
+        </tr>
+      </thead>
+      <tbody id="rentalTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
+    
   </main>
 
   <script>
@@ -312,7 +393,99 @@
     }
 
     document.getElementById("calcBtn").addEventListener('click', calculate);
-    document.getElementById("resetBtn").addEventListener('click', reset);
+    
+    <script>
+// --- Rental Property Cash Flow ---
+function calcRental() {
+  const rent = parseFloat($("#rentMonth").value);
+  const maintPct = (parseFloat($("#maintPct").value) || 0) / 100;
+  const taxPct   = (parseFloat($("#taxPct").value)   || 0) / 100;
+  const incPct   = (parseFloat($("#incPct").value)   || 0) / 100;
+  const years    = parseInt($("#yearsProj").value, 10) || 1;
+
+  if (!isFinite(rent) || rent <= 0) { alert("Enter a valid Monthly Rent."); return; }
+  if (maintPct < 0 || taxPct < 0 || incPct < 0) { alert("Percentages cannot be negative."); return; }
+
+  // Monthly (Year 1) snapshot
+  const monthlyGross = rent;
+  const monthlyExp = rent * (maintPct + taxPct);
+  const monthlyNet = monthlyGross - monthlyExp;
+
+  $("#rMonGross").textContent = monthlyGross.toLocaleString(undefined, {style:"currency", currency:"USD"});
+  $("#rMonExp").textContent   = monthlyExp.toLocaleString(undefined, {style:"currency", currency:"USD"});
+  $("#rMonNet").textContent   = monthlyNet.toLocaleString(undefined, {style:"currency", currency:"USD"});
+
+  // Yearly projection table
+  const tbody = $("#rentalTableBody");
+  const rows = [];
+  tbody.innerHTML = "";
+
+  for (let y = 1; y <= years; y++) {
+    const monthlyRentY = rent * Math.pow(1 + incPct, y - 1);
+    const annualGross  = monthlyRentY * 12;
+    const annualMaint  = annualGross * maintPct;
+    const annualTax    = annualGross * taxPct;
+    const annualNet    = annualGross - annualMaint - annualTax;
+
+    rows.push({
+      year: y,
+      monthlyRent: monthlyRentY,
+      gross: annualGross,
+      maint: annualMaint,
+      tax: annualTax,
+      net: annualNet
+    });
+
+    tbody.insertAdjacentHTML("beforeend", `
+      <tr class="border-b border-slate-100">
+        <td class="p-2">${y}</td>
+        <td class="p-2">${monthlyRentY.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+        <td class="p-2">${annualGross.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+        <td class="p-2">${annualMaint.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+        <td class="p-2">${annualTax.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+        <td class="p-2">${annualNet.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+      </tr>
+    `);
+  }
+
+  // Enable CSV download
+  $("#rentalCsvBtn").disabled = rows.length === 0;
+  $("#rentalCsvBtn").onclick = () => downloadCSVRental(rows);
+}
+
+function resetRental() {
+  ["rentMonth","maintPct","taxPct","incPct","yearsProj"].forEach(id => { $(`#${id}`).value = ""; });
+  $("#rMonGross").textContent = "—";
+  $("#rMonExp").textContent   = "—";
+  $("#rMonNet").textContent   = "—";
+  $("#rentalTableBody").innerHTML = "";
+  $("#rentalCsvBtn").disabled = true;
+}
+
+function downloadCSVRental(rows) {
+  const header = ["Year","Monthly Rent","Annual Gross","Annual Maintenance","Annual Taxes","Annual Net"];
+  const body = rows.map(r => [
+    r.year,
+    r.monthlyRent.toFixed(2),
+    r.gross.toFixed(2),
+    r.maint.toFixed(2),
+    r.tax.toFixed(2),
+    r.net.toFixed(2)
+  ]);
+  const csv = [header, ...body].map(arr => arr.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "rental_cashflow.csv"; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Wire up buttons
+document.getElementById("rentalCalcBtn").addEventListener("click", calcRental);
+document.getElementById("rentalResetBtn").addEventListener("click", resetRental);
+</script>
+document.getElementById("resetBtn").addEventListener('click', reset);
+    
   </script>
 </body>
 </html>

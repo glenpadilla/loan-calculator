@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mortgage Payoff & Rental Cash Flow</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    html { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; }
+    .card { background:white; border-radius: 1rem; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid rgb(226 232 240); }
+    .grid-col { display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem; }
+    .label { font-size:0.875rem; color: rgb(71 85 105); }
+    .input { width:100%; border-radius: 0.75rem; border: 1px solid rgb(203 213 225); padding: 0.5rem 0.75rem; }
+    .input:focus { outline-color: rgb(79 70 229); }
+    .pill { display:inline-flex; align-items:center; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; background: rgb(241 245 249); color: rgb(51 65 85); }
+    .btn { display:inline-flex; align-items:center; justify-content:center; border-radius: 0.75rem; padding: 0.5rem 1rem; font-weight: 600; border: 1px solid rgb(203 213 225); }
+    .btn:hover { background: rgb(248 250 252); }
+    .btn-primary { background: rgb(79 70 229); color:white; border-color: transparent; }
+    .btn-primary:hover { background: rgb(67 56 202); }
+    .table-wrap { max-height: 360px; overflow: auto; }
+    .sticky-th { position: sticky; top: 0; background: #fff; box-shadow: 0 1px 0 rgba(0,0,0,.08); }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <main class="max-w-6xl mx-auto p-4 sm:p-8">
+    <header class="mb-6">
+      <h1 class="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Mortgage Payoff Calculator</h1>
+      <p class="text-slate-600 mt-1">Enter your loan details and a monthly payment to see how long it will take to pay off, total interest, and a full amortization schedule. Works great on mobile or desktop.</p>
+    </header>
+
+    <!-- Mortgage Inputs + Summary + Chart -->
+    <section class="card p-4 sm:p-6 mb-6">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="space-y-4">
+          <div class="grid-col">
+            <label class="label">Home Price (optional)</label>
+            <input id="price" type="number" min="0" step="0.01" class="input" placeholder="e.g. 650000" />
+
+            <label class="label">Down Payment (optional)</label>
+            <input id="down" type="number" min="0" step="0.01" class="input" placeholder="e.g. 130000" />
+          </div>
+          <div class="grid-col">
+            <label class="label">Loan Amount (if known)</label>
+            <input id="loan" type="number" min="0" step="0.01" class="input" placeholder="e.g. 520000" />
+
+            <label class="label">Annual Interest Rate (%)</label>
+            <input id="rate" type="number" min="0" step="0.001" class="input" value="6.5" />
+          </div>
+          <div class="grid-col">
+            <label class="label">Monthly Payment (your plan)</label>
+            <input id="payment" type="number" min="0" step="0.01" class="input" placeholder="e.g. 3800" />
+
+            <label class="label">(Optional) Extra Monthly Principal</label>
+            <input id="extra" type="number" min="0" step="0.01" class="input" value="0" />
+          </div>
+          <div class="grid-col">
+            <label class="label">(Optional) Original Term (years)</label>
+            <input id="term" type="number" min="1" step="1" class="input" placeholder="30" />
+
+            <label class="label">(Optional) Start Date</label>
+            <input id="start" type="date" class="input" />
+          </div>
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button id="calcBtn" class="btn btn-primary">Calculate</button>
+            <button id="resetBtn" class="btn">Reset</button>
+            <button id="csvBtn" class="btn" disabled>Download CSV</button>
+          </div>
+          <p id="hint" class="text-xs text-slate-500">Tip: If both Home Price & Down Payment are filled, we compute Loan Amount = Price − Down. If you also fill the Loan Amount box, that takes priority.</p>
+        </div>
+
+        <div class="space-y-3">
+          <div class="pill">Summary</div>
+          <div class="card p-4 space-y-3">
+            <div class="flex justify-between text-slate-700"><span>Computed Loan Amount</span><span id="sumLoan" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Monthly Interest (first month)</span><span id="sumIntMo" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Planned Payment</span><span id="sumPay" class="font-semibold">—</span></div>
+            <div id="negWarn" class="hidden text-rose-700 bg-rose-50 border border-rose-200 rounded-xl p-2 text-sm">Warning: Payment is less than first month interest. This would cause negative amortization (balance grows). Increase your payment.</div>
+            <hr class="my-2" />
+            <div class="flex justify-between text-slate-700"><span>Months to Payoff</span><span id="sumMonths" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Years + Months</span><span id="sumYearsMonths" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Total Interest</span><span id="sumInterest" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Total Paid</span><span id="sumTotal" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Estimated Payoff Date</span><span id="sumDate" class="font-semibold">—</span></div>
+          </div>
+          <div class="text-xs text-slate-500">Assumes fixed-rate mortgage with monthly compounding. Taxes/insurance/PMI not included in payoff math.</div>
+        </div>
+
+        <div class="space-y-3">
+          <div class="pill">Balance Over Time</div>
+          <div class="card p-4">
+            <canvas id="balanceChart" height="220"></canvas>
+          </div>
+          <div class="text-xs text-slate-500">Chart shows the declining principal balance each month under your payment plan.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Amortization Table -->
+    <section class="card p-4 sm:p-6">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-slate-900">Amortization Schedule</h2>
+        <div class="text-xs text-slate-500">Showing all months up to payoff</div>
+      </div>
+      <div class="table-wrap">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-600">
+              <th class="sticky-th p-2">#</th>
+              <th class="sticky-th p-2">Date</th>
+              <th class="sticky-th p-2">Payment</th>
+              <th class="sticky-th p-2">Interest</th>
+              <th class="sticky-th p-2">Principal</th>
+              <th class="sticky-th p-2">Extra</th>
+              <th class="sticky-th p-2">Balance</th>
+            </tr>
+          </thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Rental Property Cash Flow Calculator -->
+    <section class="card p-4 sm:p-6 mt-8" id="rental-calc-card">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-slate-900">Rental Property Cash Flow</h2>
+        <div class="text-xs text-slate-500">Monthly cash + yearly projection</div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Inputs -->
+        <div class="space-y-4">
+          <div class="grid-col">
+            <label class="label">Monthly Rent (starting)</label>
+            <input id="rentMonth" type="number" min="0" step="0.01" class="input" placeholder="e.g. 2500" />
+
+            <label class="label">Maintenance (% of rent)</label>
+            <input id="maintPct" type="number" min="0" step="0.01" class="input" placeholder="e.g. 8" />
+          </div>
+          <div class="grid-col">
+            <label class="label">Taxes (% of rent)</label>
+            <input id="taxPct" type="number" min="0" step="0.01" class="input" placeholder="e.g. 12" />
+
+            <label class="label">Rent Increase (% per year)</label>
+            <input id="incPct" type="number" min="0" step="0.01" class="input" value="0" />
+          </div>
+          <div class="grid-col">
+            <label class="label">Years to Project</label>
+            <input id="yearsProj" type="number" min="1" step="1" class="input" value="5" />
+
+            <div></div>
+          </div>
+
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button id="rentalCalcBtn" class="btn btn-primary">Calculate Rental</button>
+            <button id="rentalResetBtn" class="btn">Reset</button>
+            <button id="rentalCsvBtn" class="btn" disabled>Download CSV</button>
+          </div>
+          <p class="text-xs text-slate-500">
+            Notes: Maintenance and Taxes are treated as a % of rent (simple model). Rent increases annually by the given %.
+          </p>
+        </div>
+
+        <!-- Monthly Summary -->
+        <div class="space-y-3">
+          <div class="pill">Monthly Summary</div>
+          <div class="card p-4 space-y-3">
+            <div class="flex justify-between text-slate-700"><span>Monthly Gross</span><span id="rMonGross" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Monthly Expenses</span><span id="rMonExp" class="font-semibold">—</span></div>
+            <div class="flex justify-between text-slate-700"><span>Monthly Net</span><span id="rMonNet" class="font-semibold">—</span></div>
+          </div>
+          <div class="text-xs text-slate-500">Expenses = (Maintenance% + Taxes%) × rent.</div>
+        </div>
+
+        <!-- Explainer -->
+        <div class="space-y-3">
+          <div class="pill">How it works</div>
+          <div class="card p-4 text-sm text-slate-700 space-y-2">
+            <p>Yearly projection compounds the rent by the annual increase you enter.</p>
+            <p>For each year: Gross = 12×rent, Expenses = Gross×(maint%+tax%), Net = Gross − Expenses.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Yearly Table -->
+      <div class="table-wrap mt-6">
+        <table class="min-w-full text-sm">
+          <thead>
+            <tr class="text-left text-slate-600">
+              <th class="sticky-th p-2">Year</th>
+              <th class="sticky-th p-2">Monthly Rent</th>
+              <th class="sticky-th p-2">Annual Gross</th>
+              <th class="sticky-th p-2">Annual Maintenance</th>
+              <th class="sticky-th p-2">Annual Taxes</th>
+              <th class="sticky-th p-2">Annual Net</th>
+            </tr>
+          </thead>
+          <tbody id="rentalTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // Robust selector
+    const $ = (sel) => (typeof sel === "string" ? document.querySelector(sel.startsWith("#") ? sel : `#${sel}`) : sel);
+    const fmtMoney = (n) => isFinite(n) ? n.toLocaleString(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }) : '—';
+
+    let chart;
+
+    function computeLoanAmount() {
+      const price = parseFloat($("#price").value);
+      const down = parseFloat($("#down").value);
+      const loan = parseFloat($("#loan").value);
+      if (!isNaN(loan) && loan > 0) return loan;
+      if (!isNaN(price) && !isNaN(down)) return Math.max(price - down, 0);
+      if (!isNaN(price) && isNaN(down)) return price;
+      return NaN;
+    }
+
+    function addMonths(date, months) {
+      const d = new Date(date.getTime());
+      d.setMonth(d.getMonth() + months);
+      return d;
+    }
+
+    function formatYM(d) {
+      const mo = d.toLocaleString(undefined, { month: 'short' });
+      return `${mo} ${d.getFullYear()}`;
+    }
+
+    function calculate() {
+      try {
+        const principal = computeLoanAmount();
+        const apr = parseFloat($("#rate").value);
+        const payment = parseFloat($("#payment").value);
+        const extra = parseFloat($("#extra").value) || 0;
+        const termYrs = parseInt($("#term").value, 10);
+        const startVal = $("#start").value;
+        const startDate = (function(v){
+          if(!v) return new Date();
+          if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(v+"T00:00:00");
+          const d = new Date(v);
+          return isNaN(d) ? new Date() : d;
+        })(startVal);
+
+        if (!isFinite(principal) || principal <= 0) {
+          alert("Please enter a valid loan amount (or price & down payment).");
+          return;
+        }
+        if (!isFinite(apr) || apr < 0) { alert("Enter a valid annual interest rate."); return; }
+        if (!isFinite(payment) || payment <= 0) { alert("Enter your planned monthly payment."); return; }
+
+        const r = apr / 100 / 12;
+        const sched = [];
+        let balance = principal;
+        let month = 0;
+        let totalInt = 0;
+
+        const firstMonthInterest = balance * r;
+        $("#sumLoan").textContent = fmtMoney(principal);
+        $("#sumIntMo").textContent = fmtMoney(firstMonthInterest);
+        $("#sumPay").textContent = fmtMoney(payment);
+
+        const neg = payment + extra <= firstMonthInterest + 1e-6;
+        $("#negWarn").classList.toggle("hidden", !neg);
+        if (neg) {
+          $("#tableBody").innerHTML = "";
+          renderChart([], []);
+          $("#sumMonths").textContent = "—";
+          $("#sumYearsMonths").textContent = "—";
+          $("#sumInterest").textContent = "—";
+          $("#sumTotal").textContent = "—";
+          $("#sumDate").textContent = "—";
+          $("#csvBtn").disabled = true;
+          return;
+        }
+
+        const maxMonths = (isFinite(termYrs) && termYrs > 0) ? termYrs * 12 * 2 : 1200;
+
+        while (balance > 0 && month < maxMonths) {
+          const interest = balance * r;
+          let princ = payment - interest;
+          let extraPay = extra;
+          if (princ + extraPay > balance) {
+            const over = princ + extraPay - balance;
+            if (extraPay >= over) extraPay -= over; else princ -= (over - extraPay);
+          }
+          const totalPay = Math.max(0, princ) + interest + Math.max(0, extraPay);
+          balance = Math.max(0, balance - Math.max(0, princ) - Math.max(0, extraPay));
+          totalInt += interest;
+          const date = addMonths(startDate, month + 1);
+          sched.push({
+            n: month + 1,
+            date: formatYM(date),
+            payment: totalPay,
+            interest,
+            principal: Math.max(0, princ),
+            extra: Math.max(0, extraPay),
+            balance
+          });
+          month++;
+          if (month > 3000) break;
+        }
+
+        $("#sumMonths").textContent = isFinite(month) ? month.toString() : "—";
+        const yrs = Math.floor(month / 12), mos = month % 12;
+        $("#sumYearsMonths").textContent = isFinite(month) ? `${yrs} yr ${mos} mo` : "—";
+        $("#sumInterest").textContent = fmtMoney(totalInt);
+        const totalPaid = sched.reduce((a, x) => a + x.payment, 0);
+        $("#sumTotal").textContent = fmtMoney(totalPaid);
+        const payoffDate = sched.length ? sched[sched.length - 1].date : "—";
+        $("#sumDate").textContent = payoffDate;
+
+        const tbody = $("#tableBody");
+        tbody.innerHTML = sched.map(row => `
+          <tr class="border-b border-slate-100">
+            <td class="p-2">${row.n}</td>
+            <td class="p-2">${row.date}</td>
+            <td class="p-2">${fmtMoney(row.payment)}</td>
+            <td class="p-2">${fmtMoney(row.interest)}</td>
+            <td class="p-2">${fmtMoney(row.principal)}</td>
+            <td class="p-2">${fmtMoney(row.extra)}</td>
+            <td class="p-2">${fmtMoney(row.balance)}</td>
+          </tr>
+        `).join("");
+
+        const labels = sched.map(x => x.n);
+        const balances = sched.map(x => x.balance);
+        renderChart(labels, balances);
+
+        $("#csvBtn").disabled = sched.length === 0;
+        $("#csvBtn").onclick = () => downloadCSV(sched);
+      } catch (e) {
+        alert("Unexpected error while calculating. Please refresh and try again. Details: " + e.message);
+        console.error(e);
+      }
+    }
+
+    function renderChart(labels, data) {
+      const ctx = $("#balanceChart").getContext("2d");
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Balance',
+            data,
+            borderWidth: 2,
+            tension: 0.2,
+            pointRadius: 0
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: true },
+            tooltip: { mode: 'index', intersect: false }
+          },
+          scales: {
+            x: { title: { display: true, text: 'Month' }, ticks: { maxTicksLimit: 8 } },
+            y: { title: { display: true, text: 'Balance (USD)' }, beginAtZero: false }
+          }
+        }
+      });
+    }
+
+    function reset() {
+      ["price","down","loan","rate","payment","extra","term","start"].forEach(id => { $(`#${id}`).value = ""; });
+      $("#rate").value = 6.5; $("#extra").value = 0;
+      ["sumLoan","sumIntMo","sumPay","sumMonths","sumYearsMonths","sumInterest","sumTotal","sumDate"].forEach(id => $(`#${id}`).textContent = '—');
+      $("#negWarn").classList.add("hidden");
+      $("#tableBody").innerHTML = "";
+      if (chart) chart.destroy();
+      $("#csvBtn").disabled = true;
+    }
+
+    function downloadCSV(rows) {
+      const header = ['Month','# Date','Payment','Interest','Principal','Extra','Balance'];
+      const body = rows.map(r => [r.n, r.date, r.payment, r.interest, r.principal, r.extra, r.balance]);
+      const csv = [header, ...body]
+        .map(arr => arr.map(v => typeof v === 'number' ? v.toFixed(2) : String(v)).join(','))
+        .join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'amortization_schedule.csv'; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // --- Rental Property Cash Flow ---
+    function calcRental() {
+      const rent = parseFloat($("#rentMonth").value);
+      const maintPct = (parseFloat($("#maintPct").value) || 0) / 100;
+      const taxPct   = (parseFloat($("#taxPct").value)   || 0) / 100;
+      const incPct   = (parseFloat($("#incPct").value)   || 0) / 100;
+      const years    = parseInt($("#yearsProj").value, 10) || 1;
+
+      if (!isFinite(rent) || rent <= 0) { alert("Enter a valid Monthly Rent."); return; }
+      if (maintPct < 0 || taxPct < 0 || incPct < 0) { alert("Percentages cannot be negative."); return; }
+
+      // Monthly (Year 1) snapshot
+      const monthlyGross = rent;
+      const monthlyExp = rent * (maintPct + taxPct);
+      const monthlyNet = monthlyGross - monthlyExp;
+
+      $("#rMonGross").textContent = monthlyGross.toLocaleString(undefined, {style:"currency", currency:"USD"});
+      $("#rMonExp").textContent   = monthlyExp.toLocaleString(undefined, {style:"currency", currency:"USD"});
+      $("#rMonNet").textContent   = monthlyNet.toLocaleString(undefined, {style:"currency", currency:"USD"});
+
+      // Yearly projection table
+      const tbody = $("#rentalTableBody");
+      const rows = [];
+      tbody.innerHTML = "";
+
+      for (let y = 1; y <= years; y++) {
+        const monthlyRentY = rent * Math.pow(1 + incPct, y - 1);
+        const annualGross  = monthlyRentY * 12;
+        const annualMaint  = annualGross * maintPct;
+        const annualTax    = annualGross * taxPct;
+        const annualNet    = annualGross - annualMaint - annualTax;
+
+        rows.push({ year: y, monthlyRent: monthlyRentY, gross: annualGross, maint: annualMaint, tax: annualTax, net: annualNet });
+
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr class="border-b border-slate-100">
+            <td class="p-2">${y}</td>
+            <td class="p-2">${monthlyRentY.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+            <td class="p-2">${annualGross.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+            <td class="p-2">${annualMaint.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+            <td class="p-2">${annualTax.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+            <td class="p-2">${annualNet.toLocaleString(undefined,{style:"currency",currency:"USD"})}</td>
+          </tr>
+        `);
+      }
+
+      // Enable CSV download
+      $("#rentalCsvBtn").disabled = rows.length === 0;
+      $("#rentalCsvBtn").onclick = () => downloadCSVRental(rows);
+    }
+
+    function resetRental() {
+      ["rentMonth","maintPct","taxPct","incPct","yearsProj"].forEach(id => { $(`#${id}`).value = ""; });
+      $("#rMonGross").textContent = "—";
+      $("#rMonExp").textContent   = "—";
+      $("#rMonNet").textContent   = "—";
+      $("#rentalTableBody").innerHTML = "";
+      $("#rentalCsvBtn").disabled = true;
+    }
+
+    function downloadCSVRental(rows) {
+      const header = ["Year","Monthly Rent","Annual Gross","Annual Maintenance","Annual Taxes","Annual Net"];
+      const body = rows.map(r => [
+        r.year,
+        r.monthlyRent.toFixed(2),
+        r.gross.toFixed(2),
+        r.maint.toFixed(2),
+        r.tax.toFixed(2),
+        r.net.toFixed(2)
+      ]);
+      const csv = [header, ...body].map(arr => arr.join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "rental_cashflow.csv"; a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // Wire up buttons
+    document.getElementById("calcBtn").addEventListener("click", calculate);
+    document.getElementById("resetBtn").addEventListener("click", reset);
+    document.getElementById("rentalCalcBtn").addEventListener("click", calcRental);
+    document.getElementById("rentalResetBtn").addEventListener("click", resetRental);
+  </script>
+</body>
+</html>
